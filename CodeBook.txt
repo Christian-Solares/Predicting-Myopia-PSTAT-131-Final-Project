@@ -1,0 +1,38 @@
+## Codebook
+Here is the list of the variables and a short description of each variable from the github page:
+
+* id: Study ID
+
+* studyyear: Year subject entered the study
+
+* myopic: Myopia within the first five years of follow up [No = 0, Yes = 1]
+
+* age: Age at first visit (years) [5, 6, 7, 8, and or 9]
+
+* gender: Gender [Male = 1, Female = 0]
+
+* spheq: Spherical Equivalent Refraction (diopter)
+
+* al: Axial Length (mm)
+
+* acd: Anterior Chamber Depth (mm)
+
+* lt: Lens Thickness (mm)
+
+* vcd: Vitreous Chamber Depth (mm)
+
+* sporthr: Time spent engaging in sports/outdoor activities (hours per week)
+
+* readhr: Time spent reading for pleasure (hours per week)
+
+* comphr: Time spent playing video/computer games or working on the computer (hours per week)
+
+* studyhr:Time spent reading or studying for school assignments (hours per week)
+
+* tvhr: Time spent watching television (hours per week)
+
+* diopterhr: Composite of near-work activities (hours per week)
+
+* mommy: Was the subject’s mother myopic? [No = 0, Yes = 1]
+
+* dadmy: Was the subject’s father myopic? [No = 0, Yes = 1]

@@ -1,0 +1,482 @@
+---
+title: "PSTAT 131 Final Project Predicting Myopia"
+author: "Christian Solares"
+date: "2026-05-10"
+output:
+    html_document:
+    toc: TRUE
+    toc_float: TRUE
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Introduction
+
+Myopia, also known as nearsightedness, is a condition that prevents clear focusing on distant objects but allows for clear vision of nearby objects. Nearsightedness can develop early in childhood and can worsen over time. Accurately predicting the risk of children developing myopia would ensure they are provided with necessary vision care. This is particularly important because uncorrected myopia can result in permanent strain and headaches, and is the most common reason for visual impairment in children. (Congdon, Burnett, and Frick 2019)
+
+For this project, I planned to create a classifier model which predicts whether a child becomes myopic within the next five years. Specifically, this model will be built using variables which are obtainable through examination and survey responses. Since developing myopia was not common in the data, it would negatively affect the models. I addressed this by training models with and without oversampling. I compare four classifiers, logistic regression, linear discriminant analysis, k-nearest neighbors and elastic net regularized logistic regression using 10-fold cross validation and evaluate them mostly by ROC AUC.
+
+
+## Data Description
+
+The dataset I use for this project was sourced from bekkabratch/aps-clone. It is part of the Orinda Longitudinal Study of Myopia (OLSM). OLSM was the name of a real-life study that began in 1989 and looked at ocular development and risk factors in children. This particular subset of the data was also used in the textbook Applied Logistic Regression by Hosmer, Lemeshow, and Sturdivant (2013).
+
+The dataset includes information on 618 individuals who were non-myopic at the start of the experiment and participated in the study for at least five years. My dependent variable is called myopic, which tells us whether the child became myopic or not during the first five years of the study. Therefore, this is a binary dependent variable with two values (Yes and No). Since only about 13% of the children in the dataset became myopic, I need to oversample the data. In this project, I address this by building classification models both with and without oversampling. The downsides to this is oversampling can lead to overfitting, but this ultimately improved the predictions of my models.
+
+
+
+## Inspiration
+
+My main motivation for this project is that I’m nearsighted, and both of my parents wear glasses too. However, both my sister and brother don’t use glasses for near or farsightedness. Thus, being personally interested in this topic, I wanted to find out to what extent my parents' myopia influenced my case and what my chances would be to avoid myopia. Another reason why I found this project interesting is because it utilizes real world factors that contribute to myopia. Beyond building a model, this project was a valuable learning experience about what causes myopia and how eye doctors and researchers study it.
+
+
+```{r, echo = FALSE, out.width = "50%", fig.align = "center"}
+knitr::include_graphics("C:/Users/csola/OneDrive/Desktop/Pstat 131/Final project folder/Pstat 131 Final Project/spongebob glasses.gif")
+```
+
+## Codebook
+Here is the list of the variables and a short description of each variable from the github page:
+
+* id: Study ID
+
+* studyyear: Year subject entered the study
+
+* myopic: Myopia within the first five years of follow up [No = 0, Yes = 1]
+
+* age: Age at first visit (years) [5, 6, 7, 8, and or 9]
+
+* gender: Gender [Male = 1, Female = 0]
+
+* spheq: Spherical Equivalent Refraction (diopter)
+
+* al: Axial Length (mm)
+
+* acd: Anterior Chamber Depth (mm)
+
+* lt: Lens Thickness (mm)
+
+* vcd: Vitreous Chamber Depth (mm)
+
+* sporthr: Time spent engaging in sports/outdoor activities (hours per week)
+
+* readhr: Time spent reading for pleasure (hours per week)
+
+* comphr: Time spent playing video/computer games or working on the computer (hours per week)
+
+* studyhr:Time spent reading or studying for school assignments (hours per week)
+
+* tvhr: Time spent watching television (hours per week)
+
+* diopterhr: Composite of near-work activities (hours per week)
+
+* mommy: Was the subject’s mother myopic? [No = 0, Yes = 1]
+
+* dadmy: Was the subject’s father myopic? [No = 0, Yes = 1]
+
+(Here I used deepseek to help me understand how to put these images side by side)
+
+::: {.columns}
+::: {.column width="50%"}
+![Figure 1: Spherical Equivalent Refraction (spheq)](C:/Users/csola/OneDrive/Desktop/Pstat 131/Final project folder/Pstat 131 Final Project/Eyes Normal and Astigmatism with and against the rule.jpg.webp)
+:::
+::: {.column width="40%"}
+![Figure 2: Ocular measurements: Axial Length (al), Anterior Chamber Depth (acd), Lens Thickness (lt), Vitreous Chamber Depth (vcd)](C:/Users/csola/OneDrive/Desktop/Pstat 131/Final project folder/Pstat 131 Final Project/many eye measurements.png)
+:::
+:::
+
+
+
+## Exploratory Data Analysis (EDA)
+
+### Reading and Understanding Data
+```{r, results = "hide"}
+set.seed(888)
+# csv file is downloaded from
+# https://github.com/JLFDataScience/myopia_prediction/tree/master
+# myopia_data <- read.csv("C:/Users/csola/OneDrive/Desktop/Pstat 131/Final project folder/Myopia dataset stuff/MYOPIA.csv")
+
+# but I found a problem where this person categorized gender for 
+# example as 1 or 0 without specifying which is which, so I found the original dataset here: 
+# https://github.com/bekkabratch/aps-clone/blob/master/data/myopia.rda 
+
+load("C:/Users/csola/OneDrive/Desktop/Pstat 131/Final project folder/Myopia dataset stuff/original_myopia_data.rda")
+# loading an .rda saved the data as "myopia", but I want to change the name to myopia_data
+myopia_data <- myopia
+any(is.na(myopia_data)) # FALSE
+summary(myopia_data)
+head(myopia_data)
+nrow(myopia_data)
+```
+There is no missing values in this dataset.
+
+
+### Cleaning data
+```{r, results = "hide", message = FALSE}
+# First before anything I need to remove "id" and "studyyear"
+library("dplyr")
+edited_myopia_data <- select(myopia_data, -id, -studyyear)
+# head(edited_myopia_data)
+# here I make these four variables numeric instead of factors.
+edited_myopia_data <- mutate(edited_myopia_data,
+myopic = as.numeric(myopic == "Yes"), # 1 = myopic, 0 = not
+    gender = as.numeric(gender == "Male"), # 1 = Male, 0 = Female
+    mommy  = as.numeric(mommy == "Yes"),
+    dadmy  = as.numeric(dadmy == "Yes"))
+# 0 = no, 1 = yes
+head(edited_myopia_data)
+summary(edited_myopia_data)
+```
+Here as stated in the comments, I make these four variables numeric instead of factors. And I removed id and studyyear because they are not important to analyze.
+
+### Correlation Plot
+```{r, warning = FALSE}
+library("corrplot")
+# I removed these variables because they were not continuous numeric variables.
+continous_edited_myopia_data <- select(edited_myopia_data, -age, -myopic, -gender, -mommy, -dadmy)
+
+cor_matrix <- cor(continous_edited_myopia_data)
+corrplot(cor_matrix, type = "lower",
+         diag = FALSE,
+         title = "Correlation Matrix of Numeric Predictors",
+         mar = c(0,0,1,0)) # adjust title margin, without it, title is cut off.
+
+```
+
+* What I notice from this correlation plot is that axial length and vitreous chamber depth (al and vcd) are highly positively correlated. This is because a longer eye (al) is mainly driven by a deeper vitreous chamber.
+
+* diopterhr and readhr, comphr, studyhr, tvhr have a strong positive correlations, which is expected since diopterhr is a "composite of near-work activities" so activities where you do not need to look far.
+
+* There are many correlations with the measurements of the eye like positive correlations with spheq and al, lt and vcd and so on. This makes sense because the measurements of the eye are all related to each other.
+
+* I removed age, myopic, gender, mommy, and dadmy because they were not continuous numeric variables. (I removed age because this data only has whole numbers 5, 6, 7, 8, and 9)
+
+
+### Distribution of Myopia Outcome (No, Yes)
+```{r}
+library("ggplot2")
+ggplot(edited_myopia_data, aes(x = factor(myopic, 
+                                          labels = c("No", "Yes")))) + 
+    geom_bar(fill = "purple") +
+    labs(title = "Distribution of Myopia Outcome", 
+         x = "Myopic within 5 years", y = "Count")
+```
+
+I could use undersampling or oversampling here because there are so little yes.
+After seeing the results of the models, I decided to use oversampling and compare the results.
+
+
+### Boxplots of Continuous Predictors
+```{r}
+library("ggplot2")
+library("tidyr")
+# Deepseek was used, I needed a way to fit multiple boxplots into one output. facet_wrap() was suggested.
+edited_myopia_data %>%
+    pivot_longer(cols = c(spheq, al, acd, lt, vcd, sporthr),
+                 names_to = "Predictor", values_to = "Value") %>%
+    ggplot(aes(x = factor(myopic, labels = c("No", "Yes")), 
+               y = Value, fill = factor(myopic))) +
+    geom_boxplot() +
+    facet_wrap(~Predictor, scales = "free") +
+    labs(title = "Continuous predictors by Myopia status", x = "Myopic") +
+    theme(legend.position = "none")
+```
+
+The most notable boxplot is spheq, where non-myopic children have a median around 0.75, while myopic children have a median close to 0.5 and a much lower and smaller distribution. This is consistent with the strong negative correlation seen in the correlation matrix.
+
+### Histograms of Predictors
+```{r}
+edited_myopia_data %>%
+    select(age, spheq, al, acd, lt, vcd, sporthr, readhr, comphr, studyhr,
+           tvhr, diopterhr) %>%
+    pivot_longer(everything(), names_to = "Variable", values_to = "Value") %>%
+    ggplot(aes(x = Value)) +
+    geom_histogram(bins = 30, fill = "darkblue", alpha = 0.7) +
+    facet_wrap(~Variable, scales = "free") +
+    labs(title = "Distribution of continuous predictors")
+```
+
+The approximately normal histograms are acd, al, lt, vcd, and spheq (spheq is right skewed). the histograms that right skewed are sporthr, readhr, comphr, studyhr, tvhr, and diopterhr. And what stands out to me is that most children are age 6 by a large margin.
+
+
+### Proportion of Myopic Children Based on Parental Myopia
+```{r, warning = FALSE, message = FALSE}
+# I wanted to use this table seen in lab 2
+library("kableExtra")
+parental_table <- edited_myopia_data %>%
+    group_by(mommy, dadmy) %>%
+    summarise(n = n(), prop_myopic = mean(myopic), .groups = "drop") %>%
+    mutate(mommy = ifelse(mommy == 1, "Mom myopic", "Mom not"),
+           dadmy = ifelse(dadmy == 1, "Dad myopic", "Dad not"))
+
+parental_table %>%
+    kable(caption = "Proportion of myopic children by parental myopia") %>%
+    kable_styling()
+```
+Based on my data, this table shows that when neither parent is myopic, only about 3.3% of children developed myopia. This serves as the baseline risk.
+When exactly one parent is myopic, the proportion increases to approximately 13% to 14%. When both parents are myopic, the proportion jumps to 22.58%, nearly seven times higher than the baseline.
+
+
+
+## Data Splitting
+```{r, warning = FALSE}
+# I made myopic numeric, now I need to change it back to a factor
+model_data <- edited_myopia_data %>%
+    mutate(myopic = factor(myopic, levels = c(0, 1), labels = c("No", "Yes")))
+
+library(rsample)
+myopia_split <- initial_split(model_data, prop = .75, strata = myopic)
+myopia_train <- training(myopia_split)
+myopia_test  <- testing(myopia_split)
+
+myopia_folds <- vfold_cv(myopia_train, v = 10, strata = myopic)
+```
+
+I decided to use 75% because there are only 81/618 myopia = yes outcomes. So having 25% in the test set ensures that we have enough yes outcomes in the test set.
+I also chose v = 10 because as stated in the lecture, usually around 5-10 folds performs the best on real world data in general. How vfold_cv() works is we split our data into 10 equal groups not in any order. We train the model on 9 of the folds and test it on the remaining 1 fold, repeating this 10 times so each fold gets a turn as the test set. But the downside to this method is depending on the number of folds and the ammound of data, there can be a big computation time. And you want to avoid doing k = n folds.
+
+
+## Processing for KNN and Elastic Net
+```{r, warning = FALSE, message = FALSE}
+library(recipes)
+myopia_recipe <- recipe(myopic ~ ., data = myopia_train) %>%
+    step_normalize(all_numeric_predictors())
+```
+
+We need to create this recipe because the models KNN and elastic net need the functions to be scaled. I used all_numeric_predictors() instead of all_predictors() to avoid accidentally trying to scale non‑numeric columns like myopic which we changed back to a factor.
+
+
+## Logistic regression
+```{r, warning = FALSE}
+library(parsnip)
+library(workflows)
+library(tune)
+library(yardstick)
+log_spec <- logistic_reg() %>% 
+    set_engine("glm") %>% 
+    set_mode("classification")
+
+log_wf <- workflow() %>% 
+    add_recipe(myopia_recipe) %>% 
+    add_model(log_spec)
+
+log_cv <- fit_resamples(log_wf, resamples = myopia_folds, 
+                        metrics = metric_set(roc_auc, accuracy))
+```
+This model works well when relationships are similar to being linear.
+
+
+## LDA
+```{r, warning = FALSE}
+library(discrim)
+lda_spec <- discrim_linear() %>% 
+    set_engine("MASS") %>% 
+    set_mode("classification")
+
+lda_wf <- workflow() %>% 
+    add_recipe(myopia_recipe) %>% 
+    add_model(lda_spec)
+
+lda_cv <- fit_resamples(lda_wf, resamples = myopia_folds,
+                        metrics = metric_set(roc_auc, accuracy))
+```
+Some predictors are highly correlated. LDA can still run, but the warning indicates instability. The issues with some computation does not mean the model is invalid, but it does suggest that the results should be interpreted with caution. This model works similar to linear regression where it assumes predictors follow a normal distribution. And this model becomes more stable the smaller the sample size.
+
+
+## QDA
+```{r}
+qda_spec <- discrim_quad() %>% 
+    set_engine("MASS") %>% 
+    set_mode("classification")
+
+qda_wf <- workflow() %>% 
+    add_recipe(myopia_recipe) %>% 
+    add_model(qda_spec)
+
+qda_cv <- fit_resamples(qda_wf, resamples = myopia_folds,
+                        metrics = metric_set(roc_auc, accuracy))
+```
+QDA failed due to "rank deficiency in group No" The myopic = Yes group has only 81 yes in full data and even fewer in training folds. QDA requires estimating a separate covariance matrix for each class, but the small sample size doesn't work well. Therefore, QDA cannot be used on this dataset.
+
+
+## KNN (tune neighbors)
+```{r, warning = FALSE, message = FALSE}
+library(kknn)
+library(dials)
+knn_spec <- nearest_neighbor(neighbors = tune()) %>% 
+    set_engine("kknn") %>% 
+    set_mode("classification")
+
+knn_wf <- workflow() %>% 
+    add_recipe(myopia_recipe) %>% 
+    add_model(knn_spec)
+
+knn_grid <- grid_regular(neighbors(range = c(3, 31)), levels = 15)
+
+knn_cv <- tune_grid(knn_wf, resamples = myopia_folds, grid = knn_grid,
+                    metrics = metric_set(roc_auc))
+# I don't have to use save() and load() because the 
+# models run time is very short.
+```
+How the KNN model works is the model makes predictions by looking at the "k" children in the training data with the most similar variables. It then votes on if those "k" children developed myopia. My range is from 3-31 because starting at 1 or 2 is less reliable. I chose 31 because in the training set, we have 618 x .75 = about 464 observations and sqrt(464) is about = 21, but I wanted to be more thorough and see if smoothing with even more neighbors could improve performance so I extended the range to 31.
+
+
+## Elastic Net Logistic Regression (tune penalty and mixture)
+```{r}
+en_spec <- logistic_reg(penalty = tune(), mixture = tune()) %>% 
+    set_engine("glmnet") %>% 
+    set_mode("classification")
+
+en_wf  <- workflow() %>% 
+    add_recipe(myopia_recipe) %>% 
+    add_model(en_spec)
+
+en_grid <- grid_regular(
+    penalty(range = c(0, 1), trans = identity_trans()),
+    mixture(range = c(0, 1)),
+    levels = 10)
+
+en_cv <- tune_grid(en_wf, resamples = myopia_folds, grid = en_grid,
+                   metrics = metric_set(roc_auc))
+```
+How the elastic model works is similar to logistic regression but it adds the stregths of lasso and ridge regression. Elastic net is the better model because it solves the limitations of both lasso and ridge regression. The mixture decides if the model tends to completely drop useless variables (like lasso) or just shrink them toward zero (like ridge).
+
+
+## Outputs of the Models
+```{r}
+log_res <- collect_metrics(log_cv)
+lda_res <- collect_metrics(lda_cv)
+knn_res <- collect_metrics(knn_cv)
+en_res  <- collect_metrics(en_cv)
+
+# Prints the largest mean ROC AUC for each model
+log_res
+lda_res
+library(tune)
+show_best(knn_cv, metric = "roc_auc", n = 5)
+show_best(en_cv, metric = "roc_auc", n = 5)
+
+# Based on the CV results without upscaling, elastic net had the highest mean ROC AUC (0.865).
+# Extract the best hyperparameters and fit the elastic net model.
+best_en_params <- select_best(en_cv, metric = "roc_auc")
+final_en_wf <- finalize_workflow(en_wf, best_en_params)
+final_fit <- fit(final_en_wf, data = myopia_train)
+
+# Predict on the test set
+test_pred <- augment(final_fit, new_data = myopia_test)
+
+# Confusion matrix
+test_pred %>% 
+    conf_mat(truth = myopic, estimate = .pred_class) %>% 
+    autoplot(type = "heatmap")
+
+# ROC AUC of the test (set event_level = "second" because "Yes" is the positive class)
+roc_auc(test_pred, truth = myopic, .pred_Yes, event_level = "second")
+```
+I chose the elastic net model because the elastic model's ROC AUC was 0.865, the second best was logistic regression at 0.86, LDA at 0.837 and lastly KNN at 0.748.
+
+After seeing the elastic net heatmap, the model predicted every child in the test set as “No” (non‑myopic). The test set had 21 myopic children and the model predicted every child to not have developed myopia. This result does not indicate a good model, it actually reflects that the test set lacked myopic cases, which can happen by chance when the minority class is very small. To really see if my model does well predicting myopia, the solution to this is oversampling using the themis library. Overall the test ROC AUC of this model was about .869.
+
+For context, the ROC AUC measures how well the the model separates the two classes. The higher the AUC the better the model, and the closer to 0.5, the more random the model is. 
+
+
+## Models With Oversampling Myopia = Yes Cases
+```{r, warning = FALSE}
+library(themis)
+myopia_recipe_upsample <- recipe(myopic ~ ., data = myopia_train) %>%
+    step_normalize(all_numeric_predictors()) %>%
+    step_upsample(myopic, over_ratio = 0.5, seed = 888)  
+# I chose .5 because 1 would create more overfitting.
+# once I choose a over_ratio, I cannot change it just like choosing a k value for knn.
+# had to use seed = 888 as a solution to dealing with values 
+# changing even when I set.seed at the start of all the code.
+
+# here we use the tuned hyperparameters from before 
+# and just add the upsampling to the recipe.
+log_wf_up <- workflow() %>% add_recipe(myopia_recipe_upsample) %>% add_model(log_spec)
+lda_wf_up <- workflow() %>% add_recipe(myopia_recipe_upsample) %>% add_model(lda_spec)
+knn_wf_up <- workflow() %>% add_recipe(myopia_recipe_upsample) %>% add_model(knn_spec)
+en_wf_up  <- workflow() %>% add_recipe(myopia_recipe_upsample) %>% add_model(en_spec)
+
+# Run cross‑validation again but recipe now includes oversampling
+log_cv_up <- fit_resamples(log_wf_up, resamples = myopia_folds, 
+                           metrics = metric_set(roc_auc, accuracy))
+lda_cv_up <- fit_resamples(lda_wf_up, resamples = myopia_folds,
+                           metrics = metric_set(roc_auc, accuracy))
+knn_cv_up <- tune_grid(knn_wf_up, resamples = myopia_folds, grid = knn_grid,
+                       metrics = metric_set(roc_auc))
+en_cv_up  <- tune_grid(en_wf_up, resamples = myopia_folds, grid = en_grid,
+                       metrics = metric_set(roc_auc))
+```
+
+```{r}
+log_res_up <- collect_metrics(log_cv_up)
+lda_res_up <- collect_metrics(lda_cv_up)
+knn_res_up <- collect_metrics(knn_cv_up)
+en_res_up  <- collect_metrics(en_cv_up)
+
+# Prints the largest mean ROC AUC for each model
+log_res_up
+lda_res_up
+show_best(knn_cv_up, metric = "roc_auc", n = 5)
+show_best(en_cv_up, metric = "roc_auc", n = 5)
+
+# The best model was the elastic net had highest mean ROC AUC (0.878)
+best_en_params <- select_best(en_cv_up, metric = "roc_auc")
+final_en_wf <- finalize_workflow(en_wf_up, best_en_params)
+final_fit_up <- fit(final_en_wf, data = myopia_train)
+
+test_pred_up <- augment(final_fit_up, new_data = myopia_test)
+
+# Confusion matrix
+test_pred_up %>% 
+    conf_mat(truth = myopic, estimate = .pred_class) %>% 
+    autoplot(type = "heatmap")
+
+# ROC AUC of the test
+roc_auc(test_pred_up, truth = myopic, .pred_Yes, event_level = "second")
+```
+I chose the elastic net model because the elastic model's ROC AUC with oversampling was 0.857, the second best was logistic regression at 0.848, LDA at 0.831 and lastly KNN at 0.709. What is interesting is oversampling lowered the cross‑validated ROC AUC for elastic net (from 0.865 to 0.857), but the test ROC AUC improved to 0.878
+
+What oversampling is doing is duplicating "Yes" cases in the training data. Because we set over_ratio = 0.5, the "Yes" cases are half the size of the "No" class. The downsides of oversampling are that it can lead to overfitting so I understand the consequences of this but ultimately it is necessary to improve the predictions of my models.
+Compared to the non‑upsampled Elastic net, oversampling dramatically improved sensitivity from 0% to 66.7%. Although oversampling can lead to overfitting, the improvement in detecting myopic children justifies its use. Elastic net with oversampling is therefore the recommended final model for predicting myopia onset.
+
+## Variable importance plot for the best model (overfitted elastic net model)
+```{r, warning = FALSE}
+library(vip)
+final_fit_up %>% extract_fit_parsnip() %>% vip()
+
+# Checks the gender distribution between myopic and non-myopic children
+gender_table_num <- table(myopia_data$gender, myopia_data$myopic)
+gender_table_num
+```
+What stands out to me in the variable importance plot is how important spheq was to predicting myopia compared to the other variables. Visually it seems like spheq is four times more important. But this makes logical sense because spherical equivalent refraction (spheq) is a measure of the eye's refractive error, and lower spheq values indicate a higher degree of nearsightedness. Spheq is a main indicator of myopia risk, which explains its high importance. The other predictors are more indirect measures of myopia risk, so they have lower importance scores. But to clarify, spheq is not the overall determination of someone having myopia because myopia is a multifactorial condition, meaning it is rarely determined by a single factor (Huang, Zhang, and Zhou 2025).
+
+As we can see, gender is the second most important predictor in the model. Looking at the gender distribution between myopic and non-myopic children, we can see that 35 male children developed myopia while 46 female children developed myopia. This means for the children who developed myopia, 56.79% were female. This might be the explanation for why gender was the second most important predictor in the model. But I also suspect that this observation may be due to noise because of the small difference between the two.
+
+Mommy has more than twice the importance than dadmy, but looking at the proportion table, the myopia rate when only the mother is myopic (12.7%) is very close to the rate when only the father is myopic (13.7%). So the possible reason why mommy is more important than dadmy in the model is just noise.
+
+
+
+## Conclusion
+
+For this project, I built and compared several classification models to predict whether a child would develop myopia within five years using data from the Orinda Longitudinal Study of Myopia. The data consisted of 618 children, where 81 children (13.11%) turned out to be myopic. Therefore, to solve the problem of insufficient data for those who had developed myopia, oversampling was used in this project. After data cleaning and exploring the data, I created train and test datasets (training set 75% and a test set 25%). Cross-validation of the training dataset was performed through 10 folds for estimating the model performance. I tested logistic regression, linear discriminant analysis (LDA), k‑nearest neighbors (KNN), and elastic net regularized logistic regression, both with and without oversampling to address the small number of children who developed myopia. Without oversampling, the elastic net model achieved a cross‑validated ROC AUC of 0.865. When applied to the test set, the model predicted every child as "No". So this model missing all 21 myopic children. This model performed horribly possibly due to the small number of myopic children caused the model to always predict the majority class ("No"). After adding oversampling (over_ratio = 0.5), the elastic net model’s cross‑validated ROC AUC was 0.857. On the test set, the oversampled elastic net model achieved a test ROC AUC of 0.878 and dramatically improved sensitivity from 0% to 66.7%, meaning it correctly identified two‑thirds of the myopic children in the test set. Elastic net with oversampling outperformed logistic regression, LDA, and KNN, making it the recommended final model for predicting myopia onset.
+
+Looking back at everything that happened throughout this project, many improvements could have been made. For starters, using oversampling was necessary, but is not the most efficient approach because it results in overfitting. In order to make sure that the model does not overfit, it would have been better to find a larger amount of data with an increased number of naturally occurring myopic children without using oversampling at all or some other method I am unaware of. Furthermore, in the future, different resampling techniques could have been used to address the imbalance of children who did develop myopia, such as tree-based methods (random forest, boosted trees).
+
+
+## Sources
+
+1. The myopia dataset: https://github.com/bekkabratch/aps-clone/blob/master/data/myopia.rda
+Hosmer, D. W., Lemeshow, S., & Sturdivant, R. X. (2013). Applied Logistic Regression (3rd ed.). Wiley. Retrieved from https://github.com/bekkabratch/aps-clone
+
+2. Congdon N, Burnett A, Frick K. The impact of uncorrected myopia on individuals and society. Community Eye Health. 2019;32(105):7-8. PMID: 31409943; PMCID: PMC6688418. [https://pmc.ncbi.nlm.nih.gov/articles/PMC6688418/]
+
+3. Huang L, Zhang D, Zhou J. Myopia development: multifactorial interplay, molecular mechanisms and possible strategies. Front Med (Lausanne). 2025 Aug 26;12:1638184. doi: 10.3389/fmed.2025.1638184. PMID: 40933557; PMCID: PMC12417417. [https://pmc.ncbi.nlm.nih.gov/articles/PMC12417417/]
+
+4. Figure 1: What is a spherical equivalent in myopia? (n.d.). https://clearsightcorner.com/articles/what-spherical-equivalent-myopia
+
+5. Figure 2: Meomartino, L., et al. "Ocular Ultrasonographic and Biometric Features of European Brown Hares (Lepus Europaeus)." Anatomia, Histologia, Embryologia, vol. 47, no. 3, 2018, pp. 250-253,  https://doi.org/10.1111/ahe.12350.
